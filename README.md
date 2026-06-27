@@ -9,6 +9,10 @@ entirely on your device.
   <img src="docs/screenshot.png" alt="ChipMood app screenshot" width="320">
 </p>
 
+<p align="center">
+  <a href="https://github.com/alex90132/chipmood/raw/main/docs/demo.mp4">▶ Watch the demo</a>
+</p>
+
 ---
 
 ## EN
