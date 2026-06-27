@@ -116,28 +116,6 @@ cargo test --lib --manifest-path rust/Cargo.toml   # Rust engine tests
 Optional LLM composer: paste your own OpenRouter key in **Settings** (none ships
 with the app), or `flutter build apk --dart-define=OPENROUTER_API_KEY=sk-or-...`.
 
-#### Signing a Play Store release
-
-The release build is signed with debug keys by default (fine for local
-`flutter run --release` and sharing test APKs). For a Play Store upload, create
-your own keystore and an `android/key.properties` file (both git-ignored):
-
-```bash
-keytool -genkey -v -keystore upload-keystore.jks -keyalg RSA \
-        -keysize 2048 -validity 10000 -alias upload
-```
-
-```properties
-# android/key.properties
-storeFile=/absolute/path/to/upload-keystore.jks
-storePassword=********
-keyAlias=upload
-keyPassword=********
-```
-
-When `key.properties` is present the release build is signed with your upload
-key automatically (`flutter build appbundle --release` for the Play Store).
-
 ### Data & copyright
 
 ChipMood's sound comes from a hand‑written synthesizer, not from samples. The
@@ -259,28 +237,6 @@ cargo test --lib --manifest-path rust/Cargo.toml   # тесты движка
 
 LLM‑композитор (опционально): введи свой ключ OpenRouter в **Настройках** (в
 приложении ключа нет) или `flutter build apk --dart-define=OPENROUTER_API_KEY=...`.
-
-#### Подпись релиза для Play Store
-
-По умолчанию релиз подписывается debug-ключами (этого хватает для локального
-`flutter run --release` и раздачи тестовых APK). Для загрузки в Play Store
-создай свой keystore и файл `android/key.properties` (оба в .gitignore):
-
-```bash
-keytool -genkey -v -keystore upload-keystore.jks -keyalg RSA \
-        -keysize 2048 -validity 10000 -alias upload
-```
-
-```properties
-# android/key.properties
-storeFile=/абсолютный/путь/к/upload-keystore.jks
-storePassword=********
-keyAlias=upload
-keyPassword=********
-```
-
-Если `key.properties` есть, релиз автоматически подписывается твоим ключом
-(`flutter build appbundle --release` для Play Store).
 
 ### Данные и авторские права
 
