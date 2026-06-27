@@ -6,16 +6,14 @@ Turn a photo into an original 16‑bit chiptune track — composed and synthesiz
 entirely on your device.
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="ChipMood app screenshot" width="320">
-</p>
-
-<p align="center">
+  <img src="docs/screenshot.webp" alt="ChipMood app screenshot" width="270">
+  &nbsp;&nbsp;
   <a href="https://github.com/alex90132/chipmood/raw/main/docs/demo.mp4">
-    <img src="docs/demo.gif" alt="ChipMood demo" width="300">
+    <img src="docs/demo.gif" alt="ChipMood demo" width="270">
   </a>
 </p>
 
-<p align="center"><sub>click the preview for the full video (with sound)</sub></p>
+<p align="center"><sub>screenshot · animated demo (click for the full video with sound)</sub></p>
 
 ---
 
