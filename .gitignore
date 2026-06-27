@@ -1,0 +1,110 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Android release signing — NEVER commit the keystore or its passwords
+android/key.properties
+**/*.jks
+**/*.keystore
+upload-keystore.jks
+
+# ---------------------------------------------------------------------------
+# ChipMood: keep the repo lean and free of copyrighted / large / generated data
+# ---------------------------------------------------------------------------
+
+# Build outputs
+*.apk
+*.aab
+
+# Copyrighted source material (do NOT redistribute): the Unreal/UT99 soundtrack
+# modules and any audio extracted/rendered from them.
+U1+UT99 music.pk3
+/reference/
+assets/samples/ut_bank.bin
+
+# Scratch image sources used while making the launcher icon
+/1782453770144.png
+/1782453901160.png
+/*-Photoroom.png
+
+# ML pipeline: virtualenv, datasets, checkpoints and one-off run outputs.
+ml/.venv/
+ml/__pycache__/
+ml/nesmdb_midi/
+ml/*.tar.gz
+ml/ckpt.pt
+ml/*.wav
+ml/*.png
+ml/generated_song.json
+ml/srv_song.json
+ml/gt_song.json
+ml/Foregone_*.json
+
+# Orpheus fine-tuning: downloaded code modules, base weights, checkpoints, runs.
+# Only the source scripts under ml/orpheus/*.py and README are tracked.
+ml/orpheus/codebase/
+ml/orpheus/base_model/
+ml/orpheus/checkpoints/
+ml/orpheus/data/
+ml/orpheus/out/
+ml/orpheus/train.log
+ml/orpheus/__pycache__/
+
+# Rust / cargo build output
+rust/target/
+**/target/
+*.rlib
+
+# Per-platform generated/ephemeral build files
+**/ephemeral/
+**/.cxx/
+android/.gradle/
+.gradle/
+
+# ML training data shards
+ml/data/
+
+# Loose screenshots at the repo root (the tracked copy lives in docs/)
+/Screenshot_*.png
