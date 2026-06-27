@@ -10,10 +10,12 @@ entirely on your device.
 </p>
 
 <p align="center">
-  <video src="https://github.com/alex90132/chipmood/raw/main/docs/demo.mp4" controls muted width="320"></video>
+  <a href="https://github.com/alex90132/chipmood/raw/main/docs/demo.mp4">
+    <img src="docs/demo.gif" alt="ChipMood demo" width="300">
+  </a>
 </p>
 
-<p align="center"><sub>▶ demo — if the player doesn't load, <a href="https://github.com/alex90132/chipmood/raw/main/docs/demo.mp4">open it here</a></sub></p>
+<p align="center"><sub>click the preview for the full video (with sound)</sub></p>
 
 ---
 
