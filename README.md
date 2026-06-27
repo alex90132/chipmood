@@ -1,6 +1,6 @@
 # ChipMood
 
-*A research / experimental project · English below · Русский ниже*
+*A research / experimental project · EN / RU*
 
 Turn a photo into an original 16‑bit chiptune track — composed and synthesized
 entirely on your device.
@@ -11,7 +11,7 @@ entirely on your device.
 
 ---
 
-## English
+## EN
 
 ### What it is
 
@@ -152,7 +152,7 @@ Third‑party datasets used to generate the bundled data carry their own terms.
 
 ---
 
-## Русский
+## RU
 
 ### Что это
 
