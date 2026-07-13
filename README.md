@@ -1,174 +1,142 @@
-# ChipMood
-
-*A research / experimental project*
-
-**English** · [Русский](README.ru.md)
-
-Turn a photo into an original 16‑bit chiptune track — composed and synthesized
-entirely on your device.
+<h1 align="center">ChipMood</h1>
 
 <p align="center">
-  <img src="docs/screenshot.webp" alt="ChipMood app screenshot" width="270">
+  Превращает фото в оригинальный <b>16-битный chiptune</b> — сочиняет и синтезирует прямо на телефоне.<br/>
+  Навёл камеру, нажал один раз — приложение читает настроение по цветам и пишет целую песню. Полностью офлайн.
+</p>
+
+<p align="center">
+  <b>Русский</b> ·
+  <a href="README.en.md">English</a>
+</p>
+
+<p align="center">
+  <img alt="Лицензия: Unlicense" src="https://img.shields.io/badge/license-Unlicense-blue">
+  <img alt="Платформа: Android" src="https://img.shields.io/badge/platform-Android-3ddc84">
+  <img alt="Работает офлайн" src="https://img.shields.io/badge/%D1%80%D0%B0%D0%B1%D0%BE%D1%82%D0%B0%D0%B5%D1%82-100%25%20%D0%BE%D1%84%D0%BB%D0%B0%D0%B9%D0%BD-f59e0b">
+  <img alt="Движок: Rust chip-synth" src="https://img.shields.io/badge/%D0%B4%D0%B2%D0%B8%D0%B6%D0%BE%D0%BA-Rust%20chip--synth-b7410e">
+</p>
+
+<p align="center">
+  <img src="docs/screenshot.webp" width="260" alt="Экран приложения">
   &nbsp;&nbsp;
   <a href="https://github.com/alex90132/chipmood/raw/main/docs/demo.mp4">
-    <img src="docs/demo.gif" alt="ChipMood demo" width="270">
+    <img src="docs/demo.gif" width="260" alt="Демо">
   </a>
 </p>
 
-<p align="center"><sub>screenshot · animated demo (click for the full video with sound)</sub></p>
+<p align="center"><sub>скриншот · анимированное демо (клик — полное видео со звуком)</sub></p>
 
----
+## Что умеет
 
-## What it is
+ChipMood — эксперимент по генерации музыки на устройстве по фотографии. Наводишь
+камеру на что угодно, жмёшь один раз — и приложение определяет настроение по
+цветам снимка, сочиняет целый трек из библиотеки реальных игровых музыкальных
+фраз и играет его на собственном чип-синтезаторе (импульс / треугольник / пила /
+шум). Цель — чтобы звучало так, **будто написал и сыграл живой человек**, но с
+сырой «чиповой душой» классического chiptune.
 
-ChipMood is an experiment in **on‑device, photo‑driven music generation**. Point
-the camera at anything, tap once, and the app reads a mood from the image's
-colours, composes a full song from a library of real game‑music phrases, and
-plays it back on a hand‑written chip synthesizer (pulse / triangle / saw /
-noise). It runs **fully offline** by default — no cloud, no account, no credits.
+- **Фото → музыка одним нажатием** — лёгкий анализ цвета (яркость, теплота,
+  насыщенность) задаёт настроение: happy / tense / sad / calm.
+- **Только хиты** — каждое нажатие генерирует кучу вариантов трека, встроенный
+  «критик» оценивает каждый и играет **только лучший**; неудачные ты не слышишь.
+- **Полностью офлайн** — без облака, аккаунта и кредитов; весь звук даёт
+  собственный синтезатор на Rust, а не сэмплы.
+- **Ремикс через любой ИИ-чат** — кнопка **Copy** собирает компактный промпт с
+  реальными «хит-фразами», вставляешь ответ обратно кнопкой **Paste** — трек
+  аранжируется и синтезируется на устройстве.
+- **Живой микшер и экспорт** — мьют каналов на лету под эквалайзером, экспорт в
+  MP3 320 kbps с фото-обложкой внутри файла.
 
-## The goal (and where it stands)
+## Как это работает
 
-The north star is a track that sounds like **a human actually wrote and played
-it** — real structure, a singable melody, tasteful harmony, groove and
-dynamics — while keeping the raw, on‑chip "soul" of classic chiptune. This is an
-ongoing research project: it gets closer with every iteration, but it is not a
-finished product.
+1. **Фото → настроение.** Анализ цвета через `dart:ui` раскладывает снимок по
+   квадранту valence/arousal.
+2. **Поиск (RAG).** Библиотека реальных, нормализованных по тональности
+   «кирпичиков» запрашивается по настроению — фразы (лид / гармония / контрапункт
+   / бас / барабаны), аккорды, формы, грувы, бас-линии, сбивки, голосования.
+3. **Сочинение (`RagComposer`).** Полностью на устройстве: выбирает связный
+   материал, транспонирует в тональность и выстраивает сквозную форму
+   (вступление → развитие → брейкдаун → поднятый финальный припев → концовка).
+   *Опционально:* со своим ключом OpenRouter план пишет LLM по той же библиотеке.
+4. **Аранжировка (`ProceduralArranger` + `MelodyEngine`).** Компактный план
+   превращается в плотную 8-голосную `Composition` с «человеческой» агогикой.
+5. **Выбор лучшего дубля (`HitCritic`).** Символьный критик оценивает кандидатов
+   по повторяемости хука, поющемуся контуру, консонансу лида и баса,
+   устойчивости грува, «дыханию» фраз и динамике припева — играется победитель.
+6. **Синтез (движок на Rust).** Band-limited осцилляторы (PolyBLEP), синтез
+   барабанов, резонансный фильтр на голос, драйв, бит-краш, тремоло, по-нотные
+   трекерные эффекты (арп / слайд / вибрато / ретриг / дилей).
+7. **Мастеринг + вывод.** Glue-компрессор → левелер → лимитер и лёгкий реверб;
+   воспроизведение как 16-bit PCM, экспорт в MP3 с обложкой.
 
-## The neural experiment (honest results)
+## Датасеты в основе библиотеки
 
-We first tried the obvious thing: **train a neural model** to compose chiptune
-end‑to‑end (see `ml/train.py`, `ml/model.py`, `ml/generate.py`, the `ckpt.pt`
-checkpoint and the `server.py` inference path). The result was **poor** —
-meandering, structureless output that never felt musical. Training a competent
-symbolic‑music model needs far more data, compute and time than the project had.
+Намайнены скриптами в `ml/` в компактный JSON в `assets/rag/`:
 
-So we pivoted to a **retrieval‑augmented, rules‑driven** approach that leans on
-real music instead of a half‑trained model — and it sounds dramatically better.
-The neural path is still wired in (optional, behind a settings URL) but is not
-the default.
+- **NES-MDB** + General-MIDI (мульти-трек) — chiptune и широкая мелодика.
+- **POP909** — реальные поп-прогрессии аккордов + контрапункт.
+- **EMOPIA** — фортепианные клипы с точными метками настроения (4 квадранта).
+- **VGMIDI** — аранжировки игровых саундтреков.
+- **YM2413-MDB** — FM игровая музыка 80-х с эмо-метками.
+- Трекерные модули **Unreal / UT99** — сквозные формы и демосцен-лиды (свой
+  парсер S3M/IT; не распространяются).
 
-## How it works (pipeline)
+## Нейросетевой эксперимент (честно)
 
-1. **Photo → mood.** A small `dart:ui` colour analysis (brightness, warmth,
-   saturation) maps the shot to a valence/arousal quadrant: happy / tense /
-   sad / calm.
-2. **Retrieval (RAG).** A library of real, key‑normalized musical material is
-   queried by mood — exemplar phrases (lead / harmony / counter / bass / drums),
-   chord progressions, song forms, grooves, basslines, fills and chord voicings.
-3. **Compose (`RagComposer`).** Entirely on‑device, it picks coherent material,
-   transposes it to a key, lays out a through‑composed form (intro → developing
-   body → breakdown → lifted final chorus → outro) and mixes parts from the
-   retrieval pool. No network, no AI credits.
-   - *Optional LLM path:* with your own OpenRouter API key, an LLM writes the
-     song plan instead, guided by the same reference library.
-4. **Arrange (`ProceduralArranger` + `MelodyEngine`).** The compact plan becomes
-   a dense 8‑voice `Composition`: arpeggiated harmony, walking bass, drum groove
-   + fills, per‑section energy curve and humanized timing/velocity.
-5. **Pick the best take (`HitCritic`).** Each tap generates many candidate
-   tracks; a symbolic critic scores every one for hook/motif repetition,
-   singable contour, lead‑vs‑bass consonance, groove steadiness, breathing and
-   chorus dynamics — and only the winner is ever played. The duds are discarded
-   unheard, so the floor quality rises.
-6. **Synthesize (Rust engine).** A hand‑written engine renders it: band‑limited
-   oscillators (PolyBLEP), drum synthesis (kick/snare/hat/tom), per‑voice
-   resonant filter, drive, bitcrush, tremolo, per‑note tracker effects (arp /
-   slide / vibrato / retrigger / delay) and a tempo‑synced ping‑pong delay.
-7. **Master.** A glue compressor → long‑term leveler → brick‑wall limiter bus,
-   plus a small reverb, keep levels even and the mix cohesive.
-8. **Playback & export.** Audio streams as 16‑bit PCM via `flutter_pcm_sound`
-   for live playback; export renders a 320 kbps MP3 with the source photo
-   embedded as cover art. A **live mixer** (mute buttons per channel under the
-   equalizer) lets you tweak the mix, and the choice carries into the export.
+Сначала попробовали **обучить нейросеть** сочинять chiptune целиком (`ml/train.py`,
+`ml/model.py`, `ml/generate.py`, чек-пойнт `ckpt.pt`). Вышло **плохо** —
+бессвязный, бесструктурный вывод. Для вменяемой модели символьной музыки нужно
+несравнимо больше данных, вычислений и времени. Поэтому перешли к
+**retrieval-augmented + правила** — звучит несравнимо лучше. Нейропуть остался в
+коде опционально, но не по умолчанию.
 
-## Remix with any AI chat
+## Собрать самому
 
-The **Copy** button builds a compact, human‑readable prompt (craft rules + real
-"hit phrases" mined from the reference library + a skeleton of the current
-track). Paste it into any AI chat, get a modified song plan back, paste it into
-the app with **Paste**, and it is arranged and synthesized on‑device — no API
-key required.
-
-## Datasets behind the retrieval library
-
-Mined by the scripts in `ml/` into compact JSON in `assets/rag/`:
-
-- **NES‑MDB** + a General‑MIDI multi‑track set — chiptune & broad melodic vocab.
-- **POP909** — real pop chord progressions + secondary (counter) melodies.
-- **EMOPIA** — piano clips with precise 4‑quadrant valence/arousal mood labels.
-- **VGMIDI** — video‑game soundtrack arrangements.
-- **YM2413‑MDB** — 80s FM video‑game music with emotion labels (mined locally).
-- **Unreal / UT99** tracker modules — through‑composed forms & demoscene leads
-  (parsed by our own S3M/IT reader; not redistributed).
-
-## Architecture
-
-```
-lib/src/
-  domain/         entities (Composition, Pattern, Note, Instrument…)
-  data/
-    composer/     RagComposer — builds the whole song plan offline from RAG
-    arranger/     ProceduralArranger + MelodyEngine — plan → dense Composition
-    critic/       HitCritic — scores candidates so only the best take plays
-    datasources/  OpenRouter (LLM) + Rust synth bridge + PCM player
-    knowledge/    NesRag, GrooveLibrary — load the retrieval library
-    mappers/      Composition <-> tracker‑style JSON contract
-  presentation/   Riverpod providers, controllers, screens, widgets
-rust/src/synth/   the synthesis engine (oscillators, drums, FX, mastering)
-rust/src/api/     flutter_rust_bridge surface (stream / WAV / MP3)
-ml/               offline data‑mining + the (abandoned) neural experiment
-assets/rag/       the retrieval library (normalized note data, JSON)
-```
-
-## Build & run
-
-Requirements: Flutter SDK, the Rust toolchain (`rustup`) and the Android NDK.
-The Rust crate is built automatically by the `flutter_rust_bridge` hooks.
+Нужны: Flutter SDK, тулчейн Rust (`rustup`) и Android NDK. Rust-крейт собирается
+автоматически хуками `flutter_rust_bridge`.
 
 ```bash
 flutter pub get
-flutter run                      # on a connected device
-flutter build apk --release      # release APK
-flutter test                                       # Dart tests
-cargo test --lib --manifest-path rust/Cargo.toml   # Rust engine tests
+flutter run                      # на подключённом устройстве
+flutter build apk --release      # релизный APK
+flutter test                                       # Dart-тесты
+cargo test --lib --manifest-path rust/Cargo.toml   # тесты движка
 ```
 
-Optional LLM composer: paste your own OpenRouter key in **Settings** (none ships
-with the app), or `flutter build apk --dart-define=OPENROUTER_API_KEY=sk-or-...`.
+> LLM-композитор опционален: введи свой ключ OpenRouter в **Настройках** (в
+> приложении ключа нет) или `flutter build apk --dart-define=OPENROUTER_API_KEY=...`.
 
-## Data & copyright
+## Данные и авторские права
 
-ChipMood's sound comes from a hand‑written synthesizer, not from samples. The
-retrieval library contains only normalized, transformed note data. Copyrighted
-source material (the Unreal/UT99 modules, raw datasets, checkpoints) is **not**
-included and is git‑ignored — bring your own copies to re‑run the miners.
+Звук ChipMood идёт от собственного синтезатора, а не от сэмплов. Библиотека
+референсов содержит только нормализованные, преобразованные ноты. Защищённый
+авторским правом исходный материал (модули Unreal/UT99, сырые датасеты,
+чек-пойнты) **не** включён и в `.gitignore` — для перезапуска майнеров принеси
+свои копии.
 
-## Acknowledgements
+## Благодарности
 
-ChipMood stands on a lot of other people's work — thank you:
+ChipMood стоит на работе многих людей — спасибо:
 
-- **Markov melody model** — the order‑2 scale‑degree Markov chain that drives a
-  lot of the lead lines is adapted from Oscar Sandford's
-  [chiptune-generation](https://github.com/oscarsandford/chiptune-generation).
-- **Mood from music** — the continuous valence/arousal mapping was inspired by
+- **Марковская модель мелодии** — цепь Маркова 2-го порядка по ступеням лада
+  адаптирована из
+  [oscarsandford/chiptune-generation](https://github.com/oscarsandford/chiptune-generation).
+- **Настроение из музыки** — отображение valence/arousal вдохновлено
   [serkansulun/midi-emotion](https://github.com/serkansulun/midi-emotion).
-- **Orpheus Music Transformer** by Aleksandr Sigalov — the optional fine‑tuning
-  path under `ml/orpheus/` builds on
+- **Orpheus Music Transformer** Александра Сигалова — опциональный путь
+  дообучения в `ml/orpheus/` построен на
   [asigalov61/Orpheus-Music-Transformer](https://huggingface.co/asigalov61/Orpheus-Music-Transformer)
-  (Apache‑2.0).
-- **Datasets** mined into the retrieval / Markov library:
-  [NES‑MDB](https://github.com/chrisdonahue/nesmdb),
+  (Apache-2.0).
+- **Датасеты**: [NES-MDB](https://github.com/chrisdonahue/nesmdb),
   [POP909](https://github.com/music-x-lab/POP909-Dataset),
   [EMOPIA](https://annahung31.github.io/EMOPIA/),
   [VGMIDI](https://github.com/lucasnfe/vgmidi),
-  [YM2413‑MDB](https://zenodo.org/records/7520537).
-- The **Unreal / UT99** soundtrack is referenced for study only and is not
-  redistributed.
+  [YM2413-MDB](https://zenodo.org/records/7520537).
+- Саундтрек **Unreal / UT99** использован только для изучения и не
+  распространяется.
 
-Each project keeps its own license; only normalized note data derived from them
-ships in this repo.
+## Лицензия
 
-## License
-
-Public domain — **The Unlicense** (see `LICENSE`). Do whatever you want with it.
-Third‑party datasets used to generate the bundled data carry their own terms.
+Public domain — **The Unlicense** (см. [`LICENSE`](LICENSE)). Делай что угодно.
+Сторонние датасеты, использованные для генерации данных, имеют свои условия.
