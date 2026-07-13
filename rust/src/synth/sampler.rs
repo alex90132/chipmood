@@ -128,11 +128,18 @@ pub fn load_path(path: &str) -> anyhow::Result<()> {
 
 impl SampleBank {
     /// Resolve a track's `sample` reference for a given note pitch:
-    /// "@kit" -> a drum sample chosen by the note's kit piece; otherwise a named
-    /// melodic/bass sample. Returns (sample, pitched).
+    /// "@kit" (or "@kitN" for kit variant N) -> a drum sample chosen by the
+    /// note's kit piece; otherwise a named melodic/bass sample. The variant
+    /// index lets every track use a different-sounding drum kit instead of
+    /// always the first sample of each category.
     pub fn resolve(&self, name: &str, kit_cat: &str) -> Option<Arc<Sample>> {
-        if name == "@kit" {
-            return self.by_cat.get(kit_cat).and_then(|v| v.first()).cloned();
+        if let Some(rest) = name.strip_prefix("@kit") {
+            let idx: usize = rest.parse().unwrap_or(0);
+            return self
+                .by_cat
+                .get(kit_cat)
+                .and_then(|v| if v.is_empty() { None } else { v.get(idx % v.len()) })
+                .cloned();
         }
         self.map.get(name).cloned()
     }

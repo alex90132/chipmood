@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/error/failures.dart';
+import '../../data/composer/ai_remix_prompt.dart';
 import '../../domain/entities/compose_request.dart';
 import '../../domain/entities/composition.dart';
 import '../providers/providers.dart';
@@ -178,7 +179,29 @@ class StudioController extends Notifier<StudioState> {
     }
   }
 
-  /// The current track serialized as JSON (for the Copy button). Null if none.
+  /// Human-sounding AI-chat prompt for the Copy button: craft tips + 1–2 real
+  /// RAG hit phrases + a tiny skeleton of the current track. Paste the AI's
+  /// reply (a song-plan JSON) via [playFromJson].
+  Future<String?> exportAiPrompt() async {
+    final c = state.composition;
+    if (c == null) return null;
+    // Mood guess from tempo so the hit phrases match the track's energy.
+    final bpm = c.bpm;
+    final mood = bpm >= 150
+        ? 'tense'
+        : bpm >= 125
+            ? 'happy'
+            : bpm >= 95
+                ? 'calm'
+                : 'sad';
+    List<Map<String, dynamic>> hits = const [];
+    try {
+      hits = await ref.read(nesRagProvider).pickHitPhrases(count: 2, mood: mood);
+    } catch (_) {}
+    return const AiRemixPrompt().build(c, hits: hits);
+  }
+
+  /// Full composition JSON (debug / backup). Prefer [exportAiPrompt] for chats.
   String? exportJson() {
     final c = state.composition;
     if (c == null) return null;
@@ -186,11 +209,13 @@ class StudioController extends Notifier<StudioState> {
     return const JsonEncoder.withIndent('  ').convert(mapper.toJson(c));
   }
 
-  /// Load a track from pasted JSON and play it. Accepts the full composition
-  /// JSON produced by [exportJson]. Throws-safe: errors surface via state.
+  /// Load a track from pasted text. Accepts:
+  ///  1) a ChipMood *song plan* (sections + arrangement) — arranged on-device,
+  ///  2) a full composition JSON (patterns + instruments).
+  /// Markdown fences / surrounding prose from chat replies are stripped.
   Future<void> playFromJson(String text) async {
     if (state.isBusy) return;
-    final trimmed = text.trim();
+    final trimmed = _extractJson(text);
     if (trimmed.isEmpty) {
       _fail(const CompositionParseFailure('Clipboard is empty.'));
       return;
@@ -202,8 +227,7 @@ class StudioController extends Notifier<StudioState> {
       if (decoded is! Map<String, dynamic>) {
         throw const CompositionParseFailure('Expected a JSON object.');
       }
-      final mapper = ref.read(compositionMapperProvider);
-      final composition = mapper.fromJson(decoded);
+      final composition = await _compositionFromPaste(decoded);
       if (composition.patterns.isEmpty) {
         throw const CompositionParseFailure('No patterns in JSON.');
       }
@@ -217,6 +241,42 @@ class StudioController extends Notifier<StudioState> {
           ? e
           : CompositionParseFailure('Invalid JSON: $e'));
     }
+  }
+
+  Future<Composition> _compositionFromPaste(Map<String, dynamic> json) async {
+    final hasPlan = json['sections'] is List &&
+        (json['sections'] as List).isNotEmpty &&
+        json['patterns'] == null;
+    if (hasPlan) {
+      final grooves = await ref.read(grooveLibraryProvider).load();
+      final markov = await ref.read(markovLibraryProvider).load();
+      final seconds = (json['target_seconds'] as num?)?.toDouble() ??
+          (json['seconds'] as num?)?.toDouble() ??
+          state.composition?.targetSeconds ??
+          154;
+      return ref.read(proceduralArrangerProvider).build(
+            json,
+            targetSeconds: seconds,
+            grooves: grooves,
+            markov: markov,
+          );
+    }
+    return ref.read(compositionMapperProvider).fromJson(json);
+  }
+
+  /// Pull a JSON object out of a chat reply (fences / leading prose).
+  static String _extractJson(String raw) {
+    var text = raw.trim();
+    if (text.isEmpty) return '';
+    final fence = RegExp(r'```(?:json)?\s*([\s\S]*?)```', multiLine: true);
+    final m = fence.firstMatch(text);
+    if (m != null) text = m.group(1)!.trim();
+    if (!text.startsWith('{')) {
+      final s = text.indexOf('{');
+      final e = text.lastIndexOf('}');
+      if (s != -1 && e > s) text = text.substring(s, e + 1);
+    }
+    return text;
   }
 
   void _fail(Object error) {

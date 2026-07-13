@@ -67,37 +67,105 @@ class StudioScreen extends ConsumerWidget {
                   final circle = (constraints.maxWidth * 0.74)
                       .clamp(210.0, 300.0)
                       .toDouble();
-                  return Column(
+                  // Fixed disc band: top bar + disc + EQ + mutes always take the
+                  // same vertical space, so the circle never jumps when the
+                  // equalizer / mute chips / bottom controls appear.
+                  const topBarH = 56.0;
+                  const eqH = 44.0;
+                  const mutesH = 76.0;
+                  const bottomPad = 28.0;
+                  // Bottom controls: shutter stack ≈ duration+button+hint, or
+                  // play row — reserve the taller of the two so Spacers don't
+                  // shove the disc when the mode flips.
+                  const bottomH = 168.0;
+                  final discTop = topBarH +
+                      ((constraints.maxHeight -
+                                  topBarH -
+                                  circle -
+                                  eqH -
+                                  mutesH -
+                                  bottomH -
+                                  bottomPad)
+                              .clamp(24.0, 120.0) *
+                          0.4);
+
+                  return Stack(
                     children: [
-                      _TopBar(
-                        canCopy: state.hasComposition,
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        child: _TopBar(canCopy: state.hasComposition),
                       ),
-                      const Spacer(flex: 2),
-                      // Disc/camera sits a little above center.
-                      SizedBox(
-                        height: circle,
-                        child: Center(
-                          child: showCamera
-                              ? CameraCircle(size: circle)
-                              : VinylPlayer(size: circle),
+                      Positioned(
+                        top: discTop,
+                        left: 0,
+                        right: 0,
+                        child: Column(
+                          children: [
+                            Center(
+                              child: SizedBox(
+                                height: circle,
+                                width: circle,
+                                child: Center(
+                                  child: AnimatedSwitcher(
+                                    duration: const Duration(milliseconds: 520),
+                                    switchInCurve: Curves.easeOutCubic,
+                                    switchOutCurve: Curves.easeInCubic,
+                                    transitionBuilder: (child, anim) {
+                                      final fade = CurvedAnimation(
+                                        parent: anim,
+                                        curve: Curves.easeInOut,
+                                      );
+                                      final scale =
+                                          Tween<double>(begin: 0.96, end: 1.0)
+                                              .animate(fade);
+                                      return FadeTransition(
+                                        opacity: fade,
+                                        child: ScaleTransition(
+                                          scale: scale,
+                                          child: child,
+                                        ),
+                                      );
+                                    },
+                                    child: showCamera
+                                        ? CameraCircle(
+                                            key: const ValueKey('camera'),
+                                            size: circle * 0.84,
+                                          )
+                                        : VinylPlayer(
+                                            key: const ValueKey('vinyl'),
+                                            size: circle,
+                                          ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              height: eqH,
+                              child: state.isPlaying
+                                  ? const Padding(
+                                      padding:
+                                          EdgeInsets.fromLTRB(24, 8, 24, 0),
+                                      child: WaveBars(height: 36),
+                                    )
+                                  : null,
+                            ),
+                            SizedBox(
+                              height: mutesH,
+                              child: state.hasComposition
+                                  ? const _ChannelMutes()
+                                  : null,
+                            ),
+                          ],
                         ),
                       ),
-                      // Fixed-height slot so the disc never shifts; compact bars.
-                      SizedBox(
-                        height: 44,
-                        child: state.isPlaying
-                            ? const Padding(
-                                padding: EdgeInsets.fromLTRB(24, 8, 24, 0),
-                                child: WaveBars(height: 36),
-                              )
-                            : null,
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: bottomPad,
+                        child: _BottomArea(showCamera: showCamera),
                       ),
-                      // Per-channel mute buttons, right under the equalizer.
-                      if (state.hasComposition) const _ChannelMutes(),
-                      const Spacer(flex: 3),
-                      // Controls live at the bottom, within thumb reach.
-                      _BottomArea(showCamera: showCamera),
-                      const SizedBox(height: 28),
                     ],
                   );
                 },
@@ -116,12 +184,17 @@ class _TopBar extends ConsumerWidget {
 
   Future<void> _copy(BuildContext context, WidgetRef ref) async {
     final messenger = ScaffoldMessenger.of(context);
-    final json = ref.read(studioControllerProvider.notifier).exportJson();
-    if (json == null) return;
-    await Clipboard.setData(ClipboardData(text: json));
+    final prompt =
+        await ref.read(studioControllerProvider.notifier).exportAiPrompt();
+    if (prompt == null) return;
+    await Clipboard.setData(ClipboardData(text: prompt));
+    if (!context.mounted) return;
     messenger
       ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('Track JSON copied')));
+      ..showSnackBar(SnackBar(
+        content: Text(
+            'AI prompt copied (${(prompt.length / 1000).toStringAsFixed(1)}k chars)'),
+      ));
   }
 
   Future<void> _paste(BuildContext context, WidgetRef ref) async {
@@ -131,7 +204,8 @@ class _TopBar extends ConsumerWidget {
     if (text.trim().isEmpty) {
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('Clipboard has no JSON')));
+        ..showSnackBar(const SnackBar(
+            content: Text('Clipboard empty — paste the AI song-plan JSON')));
       return;
     }
     await ref.read(studioControllerProvider.notifier).playFromJson(text);
@@ -160,12 +234,12 @@ class _TopBar extends ConsumerWidget {
           const Spacer(),
           if (canCopy)
             IconButton(
-              tooltip: 'Copy track JSON',
+              tooltip: 'Copy AI prompt (paste into a chat)',
               onPressed: () => _copy(context, ref),
               icon: const Icon(Icons.content_copy_outlined),
             ),
           IconButton(
-            tooltip: 'Paste JSON & play',
+            tooltip: 'Paste AI song-plan JSON & play',
             onPressed: () => _paste(context, ref),
             icon: const Icon(Icons.content_paste_go_outlined),
           ),

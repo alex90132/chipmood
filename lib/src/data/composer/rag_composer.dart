@@ -259,13 +259,13 @@ class RagComposer {
       ];
     }
 
-    // Production from a RAG profile (matches a real song's effect balance).
-    Map<String, dynamic> production = {};
-    if (grooves.profiles.isNotEmpty) {
-      production = Map<String, dynamic>.from(
-          grooves.profiles[rng.nextInt(grooves.profiles.length)]);
-    }
-
+    // NO 'production' here. It used to inject a mined RAG profile, but the
+    // arranger treats 'production' as the AI's EXPLICIT choice and lets it win
+    // over the per-song seeded style outright — and since ~90% of the mined
+    // profiles saturate at identical values, that stamped the SAME sound
+    // design (same drive/filter/crush/echo) onto nearly every track. The
+    // arranger already blends the RAG profile as a tendency internally;
+    // 'production' stays reserved for a real AI decision.
     return {
       'title': _title(mood, ex, rng),
       'concept': mood,
@@ -273,9 +273,12 @@ class RagComposer {
       'root': root,
       'scale': scale,
       if (ex['timbre'] != null) 'timbre': ex['timbre'],
-      'production': production,
       'sections': sections,
       'arrangement': arrangement,
+      // A true random seed carried inside the plan: it drives the arranger's
+      // style/groove/timbre picks, so every generation gets its own sound
+      // while pasting the same plan JSON still reproduces the same track.
+      'seed': 1 + rng.nextInt(0x7FFFFFFE),
       // ~45% of tracks get a fresh Markov-generated melody (originality);
       // the rest keep the real exemplar lead (coherence). Both fit the chords.
       'markovLead': rng.nextDouble() < 0.45,
@@ -301,15 +304,25 @@ class RagComposer {
   static const _moods = ['happy', 'tense', 'sad', 'calm'];
   String _randomMood(Random r) => _moods[r.nextInt(_moods.length)];
 
+  /// Combinatorial titles (mood adjective x noun): hundreds of combinations
+  /// instead of a fixed pool of 16, so titles — and everything hashed from
+  /// them — stop colliding between generations.
   String _title(String mood, Map<String, dynamic> ex, Random r) {
-    const words = {
-      'happy': ['Sunburst', 'Arcade Heart', 'Pixel Parade', 'Bright Circuit'],
-      'tense': ['Red Alert', 'Overclock', 'Boss Rush', 'Static Storm'],
-      'sad': ['Faded Save', 'Lonely Pixel', 'Last Continue', 'Blue Screen'],
-      'calm': ['Drifting Bits', 'Soft Reset', 'Moonlit Map', 'Idle Dream'],
+    const adjectives = {
+      'happy': ['Sunburst', 'Arcade', 'Neon', 'Bright', 'Golden', 'Turbo',
+        'Candy', 'Prism'],
+      'tense': ['Red', 'Overclocked', 'Static', 'Iron', 'Burning', 'Midnight',
+        'Feral', 'Crimson'],
+      'sad': ['Faded', 'Lonely', 'Blue', 'Last', 'Hollow', 'Rainy',
+        'Forgotten', 'Silent'],
+      'calm': ['Drifting', 'Soft', 'Moonlit', 'Idle', 'Gentle', 'Slow',
+        'Weightless', 'Amber'],
     };
-    final list = words[mood] ?? const ['Chip Mood'];
-    return list[r.nextInt(list.length)];
+    const nouns = ['Circuit', 'Heart', 'Parade', 'Signal', 'Horizon', 'Pixel',
+      'Echo', 'Voltage', 'Cascade', 'Orbit', 'Ember', 'Tide', 'Relay',
+      'Meadow', 'Comet', 'Static'];
+    final adj = adjectives[mood] ?? const ['Chip'];
+    return '${adj[r.nextInt(adj.length)]} ${nouns[r.nextInt(nouns.length)]}';
   }
 
   /// Analyse the photo's colours (no AI) into a mood quadrant PLUS continuous
@@ -358,7 +371,6 @@ class RagComposer {
       'bpm': 120 + r.nextInt(40),
       'root': root,
       'scale': mood == 'happy' ? 'major' : 'minor',
-      'production': const {},
       'sections': [
         {'id': 'intro', 'bars': 4, 'energy': 0.4, 'chords': [0, 0, 0, 0]},
         {'id': 'verse', 'bars': 4, 'energy': 0.7, 'chords': [0, 5, 3, 4]},
@@ -366,6 +378,7 @@ class RagComposer {
         {'id': 'outro', 'bars': 4, 'energy': 0.5, 'chords': [0, 0, 0, 0]},
       ],
       'arrangement': ['intro', 'verse', 'chorus', 'verse', 'chorus', 'outro'],
+      'seed': 1 + r.nextInt(0x7FFFFFFE),
     };
   }
 }

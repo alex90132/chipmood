@@ -513,7 +513,25 @@ impl RenderCore {
             let mut sn_band = 0.0f32;
             let mut sn_phase = 0.0f32; // snare tonal body phase
             let mut hat_lp = 0.0f32; // hat high-pass state
-            let snare_f = (2.0 * (core::f32::consts::PI * 1800.0 / srf).sin()).min(0.5);
+            let mut ring_phase = 0.0f32; // metallic ring partial (hat/snare)
+            // `tone` (0 = dark hiss .. 1 = bright metallic ring) morphs every
+            // kit piece, so each track's drum KIT has its own colour.
+            let tone = ev.tone.clamp(0.0, 1.0);
+            let snare_bp_hz = 1200.0 + 2200.0 * tone;
+            let snare_f =
+                (2.0 * (core::f32::consts::PI * snare_bp_hz / srf).sin()).min(0.6);
+            let snare_q = 0.75 - 0.45 * tone; // lower damping = longer ring
+            let snare_body_hz = 155.0 + 90.0 * tone;
+            let snare_decay = 0.115 - 0.045 * tone;
+            let kick_floor = 36.0 + 14.0 * tone;
+            let kick_sweep = 90.0 + 70.0 * tone;
+            let kick_decay = 0.20 - 0.07 * tone;
+            let kick_click = 0.18 + 0.30 * tone;
+            let tom_base = 88.0 + 52.0 * tone;
+            let hat_hp = 0.30 + 0.55 * tone;
+            let hat_decay = 0.018 + 0.030 * tone;
+            let hat_ring_hz = 4800.0 + 2600.0 * tone;
+            let hat_ring_amt = 0.35 * tone;
             let mut nlp = 0.0f32; // low-pass state
             let mut svf_low = 0.0f32;
             let mut svf_band = 0.0f32;
@@ -590,34 +608,41 @@ impl RenderCore {
                     let ttn = local as f32 / srf;
                     match kind {
                         0 => {
-                            // KICK: pitch-swept sine (≈152→42 Hz) + transient
-                            // click. Deeper floor, longer body, a bit hotter —
-                            // real sub weight to match sampled originals.
-                            let f = 42.0 + 110.0 * (-ttn / 0.04).exp();
+                            // KICK: pitch-swept sine + transient click. `tone`
+                            // moves it from a deep boomy thump to a tight,
+                            // clicky punch, so each kit has its own kick.
+                            let f = kick_floor + kick_sweep * (-ttn / 0.04).exp();
                             kphase += f / srf;
                             let body = (kphase * core::f32::consts::TAU).sin();
                             let click = nz * (-ttn / 0.005).exp();
-                            (body * 1.18 + 0.32 * click) * (-ttn / 0.16).exp()
+                            (body * 1.18 + kick_click * click) * (-ttn / kick_decay).exp()
                         }
                         2 => {
-                            // TOM: pitch-swept sine, a touch longer.
-                            let f = 110.0 + 80.0 * (-ttn / 0.08).exp();
+                            // TOM: pitch-swept sine; `tone` sets its pitch.
+                            let f = tom_base + 80.0 * (-ttn / 0.08).exp();
                             kphase += f / srf;
                             (kphase * core::f32::consts::TAU).sin() * (-ttn / 0.18).exp()
                         }
                         1 => {
-                            // SNARE: band-passed noise + ~190 Hz tonal body.
-                            let high = nz - sn_lp - 0.6 * sn_band;
+                            // SNARE: band-passed noise + tonal body. `tone`
+                            // sets the band centre, ring and body pitch —
+                            // from a fat paper snare to a bright metal crack.
+                            let high = nz - sn_lp - snare_q * sn_band;
                             sn_band += snare_f * high;
                             sn_lp += snare_f * sn_band;
-                            sn_phase += 190.0 / srf;
+                            sn_phase += snare_body_hz / srf;
                             let body = (sn_phase * core::f32::consts::TAU).sin();
-                            (0.85 * sn_band + 0.5 * body) * (-ttn / 0.09).exp()
+                            ((0.85 - 0.2 * tone) * sn_band + (0.62 - 0.3 * tone) * body)
+                                * (-ttn / snare_decay).exp()
                         }
                         _ => {
-                            // HAT: high-passed noise, very short.
-                            hat_lp += 0.5 * (nz - hat_lp);
-                            (nz - hat_lp) * (-ttn / 0.028).exp()
+                            // HAT: high-passed noise plus an optional metallic
+                            // ring partial; `tone` brightens and lengthens it.
+                            hat_lp += (1.0 - hat_hp) * (nz - hat_lp);
+                            ring_phase += hat_ring_hz / srf;
+                            let ring = (ring_phase * core::f32::consts::TAU).sin();
+                            ((nz - hat_lp) + hat_ring_amt * ring)
+                                * (-ttn / hat_decay).exp()
                         }
                     }
                 } else {

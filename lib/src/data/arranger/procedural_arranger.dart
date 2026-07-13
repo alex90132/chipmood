@@ -55,46 +55,73 @@ class ProceduralArranger {
         songSeed = (songSeed * 31 + _i(c, 0)) & 0x7FFFFFFF;
       }
     }
+    // A true per-generation random seed from the composer (stored in the plan,
+    // so pasting the same plan still reproduces). Without it the seed came
+    // only from a tiny title pool + root + chords and collided often — many
+    // "different" tracks landed on the SAME style/groove/timbres.
+    final specSeed = _i(spec['seed'], 0);
+    if (specSeed != 0) {
+      songSeed = (songSeed ^ (specSeed * 0x9E3779B1)) & 0x7FFFFFFF;
+    }
     if (songSeed == 0) songSeed = 0x1234567;
     final hook = engine.makeHook(songSeed);
     final style = _Style.pick(songSeed);
     final timbre = _str(spec['timbre'], '').toLowerCase();
     final prod = _Production.parse(spec['production']);
+    // Independent, well-mixed pick stream: the old `songSeed % n` /
+    // `(songSeed ~/ k) % n` picks were heavily correlated (nearby seeds chose
+    // nearly the same groove/bassline/profile), another reason tracks blurred
+    // together. One xorshift stream decorrelates every pick.
+    final pick = _Rng(songSeed ^ 0x3C6EF35F);
     // RAG production preset for THIS track (effect amounts from a real song).
     final profileMap = (grooves != null && grooves.profiles.isNotEmpty)
-        ? grooves.profiles[songSeed % grooves.profiles.length]
+        ? grooves.profiles[pick.range(grooves.profiles.length)]
         : const <String, dynamic>{};
     final profileProd = _Production.parse(profileMap);
-    final delayWet = (prod.delay ?? profileProd.delay ?? 0.0).clamp(0.0, 1.0);
-    // Per-note tracker effect usage, decided by the RAG profile.
+    // Per-song FX randomness. NOTE: most mined profiles saturated at the same
+    // clamped values (leadDrive 0.7 / cutoff 0.5 / resonance 0.8 ... in ~90%
+    // of them), so treating the profile as gospel made nearly every track
+    // sound identical. Profiles are now a *tendency* that gets blended with
+    // this song's seeded style plus jitter — every track lands elsewhere.
+    final fxRng = _Rng(songSeed ^ 0x7ED55D16);
+    // Master echo OFF by default — dry chip sound. Only an explicit AI
+    // production.delay turns it on (RAG profiles used to smear every track).
+    final delayWet = (prod.delay ?? 0.0).clamp(0.0, 0.6).toDouble();
+    // Per-note tracker effect usage: RAG profile sets the tendency, the song
+    // seed spreads it so no two tracks use the same amounts.
     double pf(String k, double d) => (profileMap[k] as num?)?.toDouble() ?? d;
-    final fxVib = pf('vibAmt', 0.3);
-    final fxSlide = pf('slideAmt', 0.15);
-    final fxRetrig = pf('retrigAmt', 0.15);
-    final chipArp = profileMap.isNotEmpty ? pf('arpAmt', 0.0) >= 0.5 : style.chipArp;
+    double vary(double v) => (v * (0.5 + fxRng.d())).clamp(0.0, 1.0);
+    final fxVib = vary(pf('vibAmt', 0.3));
+    final fxSlide = vary(pf('slideAmt', 0.15));
+    final fxRetrig = vary(pf('retrigAmt', 0.15));
+    // Chip (tracker) arpeggio: the mined arpAmt is ~0.7 nearly everywhere, so
+    // ">= 0.5" turned it ON for almost every track. Use it as a probability.
+    final chipArp = profileMap.isNotEmpty
+        ? fxRng.chance((pf('arpAmt', 0.4) * 0.75).clamp(0.0, 0.8))
+        : style.chipArp;
     // One real chord voicing for this song's pad (data-driven harmony shape).
     final voicing = (grooves != null && grooves.voicings.isNotEmpty)
-        ? grooves.voicings[songSeed % grooves.voicings.length]
+        ? grooves.voicings[pick.range(grooves.voicings.length)]
         : null;
     // A real drum groove + bassline for THIS track, so the rhythm and the drum
     // sound come from genuine music (varies completely track to track).
     final beat = (grooves != null && grooves.grooves.isNotEmpty)
-        ? grooves.grooves[songSeed % grooves.grooves.length]
+        ? grooves.grooves[pick.range(grooves.grooves.length)]
         : null;
     final bassline = (grooves != null && grooves.basslines.isNotEmpty)
-        ? grooves.basslines[(songSeed ~/ 7) % grooves.basslines.length]
+        ? grooves.basslines[pick.range(grooves.basslines.length)]
         : null;
     final harmPat = (grooves != null && grooves.harmonies.isNotEmpty)
-        ? grooves.harmonies[(songSeed ~/ 13) % grooves.harmonies.length]
+        ? grooves.harmonies[pick.range(grooves.harmonies.length)]
         : null;
     final arpPat = (grooves != null && grooves.arps.isNotEmpty)
-        ? grooves.arps[(songSeed ~/ 17) % grooves.arps.length]
+        ? grooves.arps[pick.range(grooves.arps.length)]
         : null;
     // A real RAG lead phrase for THIS track — used to build the melody when an
     // exemplar/AI lead is missing, so even fallbacks are genuine music (RAG is
     // the main source of inspiration), never a purely synthetic line.
     final melPat = (grooves != null && grooves.melodies.isNotEmpty)
-        ? grooves.melodies[(songSeed ~/ 19) % grooves.melodies.length]
+        ? grooves.melodies[pick.range(grooves.melodies.length)]
         : null;
     // Generate the LEAD with the Markov melody model (new, in-style melody) for
     // a portion of tracks — set by the composer via spec['markovLead'].
@@ -131,6 +158,7 @@ class ProceduralArranger {
           beatTone: beat?.tone,
           prod: prod,
           profile: profileProd,
+          rng: _Rng(songSeed ^ 0x165667B1),
           sampleOf: _sampleSelector(sampleBank, songSeed)),
       patterns: patterns,
       arrangement: arrangement,
@@ -143,25 +171,36 @@ class ProceduralArranger {
   /// when no bank, so the engine keeps the chip oscillators.
   String? Function(String)? _sampleSelector(String? bank, int seed) {
     if (bank == null) return null;
-    const mel = 24; // melodic samples available (kept within the bank's count)
+    const mel = 28; // melodic samples available in the bank
     const bass = 10;
+    // Decorrelated per-voice picks (seed%n and seed~/5%n moved almost in
+    // lockstep between nearby seeds), and a per-song drum KIT variant instead
+    // of every track playing the very first kick/snare/hat sample.
+    final r = _Rng(seed ^ 0x27D4EB2F);
+    final leadSmp = r.range(mel);
+    final counterSmp = r.range(mel);
+    final harmonySmp = r.range(mel);
+    final arpSmp = r.range(mel);
+    final padSmp = r.range(mel);
+    final bassSmp = r.range(bass);
+    final kit = r.range(6);
     return (id) {
       switch (id) {
         case 'lead':
-          return 'melodic${seed % mel}';
+          return 'melodic$leadSmp';
         case 'counter':
-          return 'melodic${(seed ~/ 5) % mel}';
+          return 'melodic$counterSmp';
         case 'harmony':
-          return 'melodic${(seed ~/ 7) % mel}';
+          return 'melodic$harmonySmp';
         case 'arp':
-          return 'melodic${(seed ~/ 11) % mel}';
+          return 'melodic$arpSmp';
         case 'pad':
-          return 'melodic${(seed ~/ 13) % mel}';
+          return 'melodic$padSmp';
         case 'bass':
-          return 'bass${seed % bass}';
+          return 'bass$bassSmp';
         case 'drums':
         case 'perc':
-          return '@kit';
+          return '@kit$kit';
       }
       return null;
     };
@@ -207,9 +246,14 @@ class ProceduralArranger {
     // varied procedural generators only when a voice is missing/too sparse.
     var harmony = _aiVoice(s['harmony'], scale, root, 4);
     var bass = _aiVoice(s['bass'], scale, root, 3);
-    // Drums: drive the RHYTHM from a real RAG groove when we have one (so the
-    // beat differs completely per track), else the AI's drums, else procedural.
-    var drums = beat != null ? null : _aiDrums(s['drums'], 3);
+    // Drums: if the plan carries a GM-style kit lane (kick 36 / snare 38 /
+    // hat 42 ...), KEEP it — the author locked it to their bass, and swapping
+    // in a random RAG groove was pulling pasted AI songs apart rhythmically.
+    // Only fall back to the real RAG groove (or procedural) when the plan has
+    // no usable kit lane.
+    var drums = _aiKitDrums(s['drums']);
+    final authoredDrums = drums != null;
+    drums ??= beat != null ? null : _aiDrums(s['drums'], 3);
     // Lead priority: Markov‑generated original melody (when requested) → the
     // exemplar/AI melody (RAG) → a real RAG lead phrase → procedural engine.
     List<Note>? leadOpt;
@@ -217,7 +261,9 @@ class ProceduralArranger {
       leadOpt = _markovLead(markov, degsPerBar, scale, root, bars,
           seed ^ 0x6D2B79F5, 0.76 + 0.24 * energy);
     }
-    leadOpt ??= _aiVoice(s['lead'], scale, root, 5);
+    final aiLead = leadOpt == null ? _aiVoice(s['lead'], scale, root, 5) : null;
+    final authoredLead = aiLead != null;
+    leadOpt ??= aiLead;
     if (leadOpt == null && melPat != null) {
       final ml = <Note>[];
       for (var b = 0; b < bars; b++) {
@@ -261,6 +307,15 @@ class ProceduralArranger {
     // Extra 16-bit layers fill out the texture; they still enter with energy so
     // sections breathe, but generously (RAG material should be heard, not
     // stripped) — the backbone always plays.
+    // How much explicit, authored material this section already carries
+    // (AI/exemplar lead+harmony+counter+bass). A fully-voiced section is a
+    // finished arrangement — piling every procedural layer on top of it is
+    // what turned pasted AI songs into mush, so the busier the plan, the
+    // higher the bar for adding arp/perc.
+    final authored = [s['lead'], s['harmony'], s['counter'], s['bass']]
+        .where((v) => v is List && v.length >= 3)
+        .length;
+    final texGate = authored >= 4 ? 0.25 : (authored == 3 ? 0.12 : 0.0);
     final pad = <Note>[];
     final arp = <Note>[];
     final perc = <Note>[];
@@ -269,7 +324,7 @@ class ProceduralArranger {
       if (energy >= 0.4) {
         _padBar(pad, barStart, root, degsPerBar[b], scale, velEnergy, voicing);
       }
-      if (energy >= 0.58) {
+      if (energy >= 0.58 + texGate) {
         if (chipArp) {
           _chipArpBar(arp, barStart, root + 12, degsPerBar[b], scale, velEnergy);
         } else if (arpPat != null) {
@@ -279,14 +334,17 @@ class ProceduralArranger {
           _arpBar(arp, barStart, root + 12, degsPerBar[b], scale, velEnergy, style);
         }
       }
-      if (energy >= 0.52) {
+      if (energy >= 0.52 + texGate) {
         _percBar(perc, barStart, velEnergy, style);
       }
     }
 
     // Real drum FILL (сбивка) on the section's last bar — a genuine phrase-end
     // run mined from real chiptunes, instead of a generic procedural roll.
-    if (grooves != null && grooves.fills.isNotEmpty && bars >= 1) {
+    // Skipped for an authored kit lane: its writer already placed the fill,
+    // and stacking a second one smears the phrase ending.
+    if (!authoredDrums &&
+        grooves != null && grooves.fills.isNotEmpty && bars >= 1) {
       final fill = grooves.fills[(seed & 0x7FFFFFFF) % grooves.fills.length];
       final base = (bars - 1) * 4.0;
       for (final n in fill) {
@@ -325,7 +383,9 @@ class ProceduralArranger {
     // TRANSITION: a rising diatonic pickup run in the last beat of energetic
     // sections, climbing to set up whatever comes next — a real "lead-in" that
     // gives the track forward motion between sections (stays in key/chord).
-    if (!isBreak && !isChorus && energy >= 0.65 && bars >= 1) {
+    // Never on an authored melody: deleting its phrase ending to inject a
+    // generic run is exactly the "random notes" effect we're avoiding.
+    if (!authoredLead && !isBreak && !isChorus && energy >= 0.65 && bars >= 1) {
       final lastDeg = degsPerBar[bars - 1];
       final base = (bars - 1) * 4.0 + 3.0; // last beat of the section
       // trim any lead note that would clash with the run
@@ -655,6 +715,16 @@ class ProceduralArranger {
     return _toMono(parsed, minNotes);
   }
 
+  /// A drum lane that clearly uses the documented GM kit mapping (kick 36,
+  /// snare 38, tom 40, hat 42...) — the author wrote a groove on purpose, so
+  /// it must not be replaced by a random RAG beat. Returns null otherwise.
+  List<Note>? _aiKitDrums(dynamic raw) {
+    final parsed = _aiDrums(raw, 6);
+    if (parsed == null) return null;
+    final kit = parsed.where((n) => n.pitch >= 35 && n.pitch <= 51).length;
+    return kit >= parsed.length * 0.8 ? parsed : null;
+  }
+
   /// Parse an LLM drum voice (noise) — keep pitches as-is, just monophonic.
   List<Note>? _aiDrums(dynamic raw, int minNotes) {
     if (raw is! List || raw.length < minNotes) return null;
@@ -725,7 +795,11 @@ class ProceduralArranger {
       h = (h * 31 + c) & 0x7FFFFFFF;
     }
     h = (h * 31 + root) & 0x7FFFFFFF;
-    h = (h * 31 + scale.length) & 0x7FFFFFFF;
+    // Hash the scale's actual intervals (its length is always 7, which
+    // contributed nothing — minor vs dorian vs phrygian now matter).
+    for (final iv in scale) {
+      h = (h * 31 + iv) & 0x7FFFFFFF;
+    }
     return h == 0 ? 12345 : h;
   }
 
@@ -1120,46 +1194,60 @@ class _Style {
     [0, 4, 2, 4],
   ];
 
-  // (waveform, duty) lead voices — bright/buzzy variety.
+  // (waveform, duty) lead voices — bright/buzzy variety plus softer colours,
+  // so leads range from thin NES pulses to fat saws to flute-like triangles.
   static const _leadVoices = <(Waveform, double)>[
     (Waveform.pulse, 0.5),
+    (Waveform.pulse, 0.33),
     (Waveform.pulse, 0.25),
+    (Waveform.pulse, 0.18),
     (Waveform.pulse, 0.125),
     (Waveform.sawtooth, 0.5),
     (Waveform.square, 0.5),
+    (Waveform.triangle, 0.5),
   ];
   // Harmony/counter voices — thinner so they sit under the lead.
   static const _harmVoices = <(Waveform, double)>[
     (Waveform.pulse, 0.25),
     (Waveform.pulse, 0.125),
     (Waveform.pulse, 0.5),
+    (Waveform.pulse, 0.33),
     (Waveform.triangle, 0.5),
     (Waveform.sine, 0.5),
+    (Waveform.sawtooth, 0.5),
   ];
   static const _bassWaves = <Waveform>[
     Waveform.triangle,
     Waveform.pulse,
     Waveform.sawtooth,
+    Waveform.square,
+    Waveform.sine,
   ];
   static const _padWaves = <Waveform>[
     Waveform.triangle,
     Waveform.sine,
     Waveform.pulse,
+    Waveform.sawtooth,
   ];
   static const _arpVoices = <(Waveform, double)>[
     (Waveform.pulse, 0.125),
     (Waveform.pulse, 0.25),
+    (Waveform.pulse, 0.33),
     (Waveform.square, 0.5),
+    (Waveform.triangle, 0.5),
   ];
-  // Lead amplitude shapes: pluck / sustained / stab.
+  // Lead amplitude shapes: pluck / sustained / stab / swell / bell.
   static const _leadEnvs = <Envelope>[
     Envelope(attack: 0.002, decay: 0.06, sustain: 0.45, release: 0.09),
     Envelope(attack: 0.004, decay: 0.04, sustain: 0.78, release: 0.13),
     Envelope(attack: 0.001, decay: 0.10, sustain: 0.25, release: 0.06),
+    Envelope(attack: 0.030, decay: 0.08, sustain: 0.70, release: 0.20),
+    Envelope(attack: 0.001, decay: 0.25, sustain: 0.15, release: 0.18),
   ];
   static const _harmEnvs = <Envelope>[
     Envelope(attack: 0.004, decay: 0.08, sustain: 0.45, release: 0.10),
     Envelope(attack: 0.006, decay: 0.05, sustain: 0.6, release: 0.14),
+    Envelope(attack: 0.015, decay: 0.10, sustain: 0.55, release: 0.18),
   ];
 
   factory _Style.pick(int seed) {
@@ -1222,30 +1310,56 @@ class _Style {
       double? beatTone,
       _Production? prod,
       _Production? profile,
+      _Rng? rng,
       String? Function(String id)? sampleOf}) {
     final p = prod;
     final pr = profile;
-    final t = _timbres[p?.leadTimbre ?? timbre];
+    final r = rng ?? _Rng(0x51ED27);
+    // Timbre from the dataset is only a BIAS, not a dictate: the tag pool is
+    // tiny (8 words, 'bright' dominates), so hard-mapping it re-used the same
+    // 2-3 lead sounds on most tracks. An explicit AI leadTimbre still wins;
+    // a dataset tag is honored ~40% of the time, else the seeded palette.
+    final (Waveform, double)? t = p?.leadTimbre != null
+        ? _timbres[p!.leadTimbre]
+        : (r.chance(0.4) ? _timbres[timbre] : null);
     final lw = t?.$1 ?? leadWave;
-    final ld = t?.$2 ?? leadDuty;
+    // Jitter the duty of a timbre-mapped pulse so even "bright" leads differ.
+    final ld = t != null
+        ? (t.$1 == Waveform.pulse
+            ? (t.$2 * (0.7 + 0.6 * r.d())).clamp(0.10, 0.5).toDouble()
+            : t.$2)
+        : leadDuty;
     final cw = t != null ? Waveform.pulse : counterWave;
-    final cd = t != null ? (ld == 0.25 ? 0.125 : 0.25) : counterDuty;
-    // Priority for every knob: AI production > RAG profile > seeded style.
-    final eDrive = p?.leadDrive ?? pr?.leadDrive ?? leadDrive;
-    final eCrush = p?.leadCrush ?? pr?.leadCrush ?? leadCrush;
-    final gv = p?.leadGlide ?? pr?.leadGlide;
-    final eGlide = gv != null ? gv * 0.07 : glideSec;
+    final cd = t != null ? (ld <= 0.3 ? 0.125 : 0.25) : counterDuty;
+    // Priority for every knob: explicit AI production wins outright; the RAG
+    // profile is only a TENDENCY blended with this song's seeded style plus
+    // jitter. (The mined profiles saturate at identical clamped values for
+    // ~90% of songs, so "profile ?? style" used to give every track the same
+    // drive/filter/crush — the #1 reason tracks all sounded alike.)
+    double knob(double? ai, double? prof, double styleV) {
+      if (ai != null) return ai.clamp(0.0, 1.0).toDouble();
+      if (prof == null) return styleV.clamp(0.0, 1.0).toDouble();
+      final w = 0.25 + 0.5 * r.d(); // profile weight 0.25..0.75
+      final v = prof * w + styleV * (1 - w) + (r.d() - 0.5) * 0.2;
+      return v.clamp(0.0, 1.0).toDouble();
+    }
+
+    final eDrive = knob(p?.leadDrive, pr?.leadDrive, leadDrive);
+    final eCrush = knob(p?.leadCrush, pr?.leadCrush, leadCrush);
+    final eGlide = knob(p?.leadGlide, pr?.leadGlide, glideSec / 0.07) * 0.07;
     final eBassWave = p?.bassWave ?? bassWave;
-    final eBassDrive = p?.bassDrive ?? pr?.bassDrive ?? bassDrive;
-    final eDrumTone = p?.drumsTone ?? beatTone ?? pr?.drumsTone ?? drumTone;
-    final ePercTone = p?.percTone ?? pr?.percTone ?? percTone;
+    final eBassDrive = knob(p?.bassDrive, pr?.bassDrive, bassDrive);
+    final eDrumTone = knob(p?.drumsTone, beatTone ?? pr?.drumsTone, drumTone);
+    final ePercTone = knob(p?.percTone, pr?.percTone, percTone);
     final ePadWave = p?.padWave ?? padWave;
-    final ePadTrem = p?.padTrem ?? pr?.padTrem ?? padTrem;
+    final ePadTrem = knob(p?.padTrem, pr?.padTrem, padTrem);
     final eArpWave = p?.arpWave ?? arpWave;
-    final eArpTrem = p?.arpTrem ?? pr?.arpTrem ?? arpTrem;
-    final eCut = p?.cutoff ?? pr?.cutoff ?? 1.0;
-    final eRes = p?.resonance ?? pr?.resonance ?? 0.0;
-    final eFenv = p?.filterEnv ?? pr?.filterEnv ?? 0.0;
+    final eArpTrem = knob(p?.arpTrem, pr?.arpTrem, arpTrem);
+    // Filter: style has no cutoff of its own, so the blend target is a mostly
+    // open, per-song random position — the profile pulls it darker/squelchier.
+    final eCut = knob(p?.cutoff, pr?.cutoff, 0.7 + 0.3 * r.d());
+    final eRes = knob(p?.resonance, pr?.resonance, 0.5 * r.d());
+    final eFenv = knob(p?.filterEnv, pr?.filterEnv, 0.6 * r.d());
     return [
         Instrument(
           id: 'lead',

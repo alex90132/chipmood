@@ -86,6 +86,109 @@ class NesRag {
     return pool[r.nextInt(pool.length)];
   }
 
+  /// Tiny "hit phrase" cards for the clipboard AI remix prompt: 1 bar of a
+  /// real pro lead (+ optional bass/drums), so the chat model hears craft
+  /// without dumping a whole song. Prefer UT / NES / YM when available.
+  Future<List<Map<String, dynamic>>> pickHitPhrases({
+    int count = 2,
+    String? mood,
+    Random? rng,
+  }) async {
+    await _ensure();
+    final all = _all ?? const [];
+    if (all.isEmpty) return const [];
+    final r = rng ?? Random();
+    var pool = mood == null
+        ? List.of(all)
+        : all.where((e) => e['mood'] == mood).toList();
+    if (pool.isEmpty) pool = List.of(all);
+
+    // Prefer sources that sound like "hits" the user cares about.
+    const prefer = ['ut', 'nes', 'ym', 'vg', 'vgm', 'pop'];
+    final ranked = <Map<String, dynamic>>[];
+    for (final src in prefer) {
+      ranked.addAll(pool.where((e) => e['source'] == src));
+    }
+    for (final e in pool) {
+      if (!ranked.contains(e)) ranked.add(e);
+    }
+    ranked.shuffle(r);
+
+    final out = <Map<String, dynamic>>[];
+    final seen = <String>{};
+    for (final e in ranked) {
+      if (out.length >= count) break;
+      final card = _hitCard(e);
+      if (card == null) continue;
+      final sig = '${card['mood']}|${card['bpm']}|${card['lead']}';
+      if (!seen.add(sig)) continue;
+      out.add(card);
+    }
+    return out;
+  }
+
+  /// One bar of lead (re-zeroed) + a few bass/drum hits — small enough for chat.
+  Map<String, dynamic>? _hitCard(Map<String, dynamic> e) {
+    final lead = _sliceBar(e['lead'], maxNotes: 10);
+    if (lead == null || lead.length < 3) return null;
+    final bass = _sliceBar(e['bass'], maxNotes: 6);
+    final drums = _sliceBar(e['drums'], maxNotes: 8);
+    final chords = (e['chords'] as List?) ?? const [];
+    return {
+      'mood': e['mood'],
+      'bpm': e['bpm'],
+      'scale': e['scale'],
+      if (e['timbre'] != null) 'timbre': e['timbre'],
+      'from': e['source'] ?? 'pro',
+      if (chords.isNotEmpty) 'chord': (chords.first as num).toInt(),
+      'lead': lead,
+      if (bass != null && bass.isNotEmpty) 'bass': bass,
+      if (drums != null && drums.isNotEmpty) 'drums': drums,
+    };
+  }
+
+  /// First bar (beats 0..4) of a voice, re-zeroed; falls back to first N notes.
+  List<List<num>>? _sliceBar(dynamic raw, {int maxNotes = 10}) {
+    if (raw is! List || raw.isEmpty) return null;
+    final inBar = <List<num>>[];
+    final any = <List<num>>[];
+    for (final n in raw) {
+      if (n is! List || n.length < 3) continue;
+      final start = (n[0] as num).toDouble();
+      final pitch = (n[1] as num).toInt();
+      final dur = (n[2] as num).toDouble();
+      final vel = n.length >= 4 ? (n[3] as num).toDouble() : 0.9;
+      final row = <num>[
+        double.parse(start.toStringAsFixed(2)),
+        pitch,
+        double.parse(dur.toStringAsFixed(2)),
+        double.parse(vel.clamp(0.0, 1.0).toStringAsFixed(2)),
+      ];
+      any.add(row);
+      if (start >= 0 && start < 4.0) {
+        inBar.add([
+          double.parse(start.toStringAsFixed(2)),
+          pitch,
+          double.parse(dur.toStringAsFixed(2)),
+          row[3],
+        ]);
+      }
+    }
+    final pick = inBar.length >= 3 ? inBar : any;
+    if (pick.isEmpty) return null;
+    // Re-zero so the bar starts at 0 (easier for the model to imitate rhythm).
+    final t0 = pick.first[0].toDouble();
+    return [
+      for (final n in pick.take(maxNotes))
+        <num>[
+          double.parse((n[0].toDouble() - t0).clamp(0.0, 8.0).toStringAsFixed(2)),
+          n[1],
+          n[2],
+          n[3],
+        ]
+    ];
+  }
+
   /// Returns a few-shot block: a diverse set of real melodies covering each
   /// mood and BOTH datasets, so the model has broad vocabulary (chiptune grit
   /// + rich multi-track arranging) for whatever the photo's mood is.

@@ -118,36 +118,44 @@ def add(pool, seen, item, key, cap):
 def profile_from(lanes):
     """A coherent production preset derived from a song's musical character:
     busy/bright -> driven, ringing, little space; sparse/legato -> clean, with
-    tremolo, glide and echo. So RAG controls the knobs AND how many effects."""
+    tremolo, glide and echo. So RAG controls the knobs AND how many effects.
+
+    NOTE: energy/legato use smooth saturating curves (1 - exp(-x)) instead of
+    hard min() clamps. The old clamps saturated on almost every busy chiptune,
+    so ~90% of the mined profiles came out with IDENTICAL knob values — which
+    then made every generated track sound the same."""
+    import math
     lead, harm, drums = lanes[0], lanes[1], lanes[3]
     if len(lead) < 6:
         return None
     bars = max(1, min(MAX_BARS, max((n[0] // SPB for n in lead), default=0) + 1))
-    energy = min(1.0, (len(lead) + len(harm)) / bars / 8.0)
+    density = (len(lead) + len(harm)) / bars
+    energy = 1.0 - math.exp(-density / 9.0)     # smooth 0..1, never flat-tops
     calm = 1.0 - energy
     hits = len(drums) or 1
     hatfrac = sum(1 for n in drums if n[2] == 42) / hits
     avgdur = sum(n[1] for n in lead) / len(lead)  # in 16ths -> legato measure
+    legato = 1.0 - math.exp(-avgdur / 5.0)
     return {
         "drumsTone": round(min(1.0, 0.12 + 0.85 * hatfrac), 2),
         "percTone": round(min(1.0, 0.45 + 0.5 * hatfrac), 2),
-        "leadDrive": round(min(0.7, 0.05 + 0.65 * energy * energy), 2),
-        "bassDrive": round(min(0.5, 0.45 * energy), 2),
-        "leadCrush": round(min(0.4, 0.3 * energy * (1 if hatfrac < 0.3 else 0)), 2),
-        "leadGlide": round(min(0.8, avgdur / 8.0), 2),
-        "padTrem": round(min(0.7, 0.6 * calm), 2),
-        "arpTrem": round(min(0.6, 0.45 * calm), 2),
-        "delay": round(min(0.6, 0.12 + 0.5 * calm), 2),
+        "leadDrive": round(0.05 + 0.65 * energy * energy, 2),
+        "bassDrive": round(0.45 * energy, 2),
+        "leadCrush": round(0.3 * energy * (1 if hatfrac < 0.3 else 0), 2),
+        "leadGlide": round(0.8 * legato, 2),
+        "padTrem": round(0.6 * calm, 2),
+        "arpTrem": round(0.45 * calm, 2),
+        "delay": round(0.12 + 0.45 * calm, 2),
         # tracker per-note effect usage (the RAG decides how much of each)
-        "vibAmt": round(min(0.8, 0.2 + 0.6 * (avgdur / 8.0)), 2),
-        "slideAmt": round(min(0.6, 0.1 + 0.4 * (avgdur / 8.0)), 2),
-        "retrigAmt": round(min(0.55, 0.55 * energy), 2),
-        "arpAmt": round(min(0.75, 0.2 + 0.5 * energy), 2),
+        "vibAmt": round(0.2 + 0.6 * legato, 2),
+        "slideAmt": round(0.1 + 0.4 * legato, 2),
+        "retrigAmt": round(0.55 * energy, 2),
+        "arpAmt": round(0.2 + 0.5 * energy, 2),
         # IT/Unreal-style resonant filter: more closed + resonant + sweep on
         # energetic/electronic material, open and clean on calm material.
         "cutoff": round(max(0.35, 1.0 - 0.5 * energy), 2),
-        "resonance": round(min(0.85, 0.2 + 0.6 * energy), 2),
-        "filterEnv": round(min(0.9, 0.25 + 0.6 * energy), 2),
+        "resonance": round(0.2 + 0.6 * energy, 2),
+        "filterEnv": round(0.25 + 0.6 * energy, 2),
     }
 
 
