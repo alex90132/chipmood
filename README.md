@@ -18,14 +18,12 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshot.webp" width="260" alt="Экран приложения">
+  <img src="docs/capture.webp" width="260" alt="Экран съёмки">
   &nbsp;&nbsp;
-  <a href="https://github.com/alex90132/chipmood/raw/main/docs/demo.mp4">
-    <img src="docs/demo.gif" width="260" alt="Демо">
-  </a>
+  <img src="docs/player.webp" width="260" alt="Плеер">
 </p>
 
-<p align="center"><sub>скриншот · анимированное демо (клик — полное видео со звуком)</sub></p>
+<p align="center"><sub>снял фото — получил трек · <a href="https://github.com/alex90132/chipmood/raw/main/docs/demo.mp4">видео со звуком</a></sub></p>
 
 ## Что умеет
 

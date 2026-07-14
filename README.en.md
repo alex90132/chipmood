@@ -18,14 +18,12 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshot.webp" width="260" alt="App screen">
+  <img src="docs/capture.webp" width="260" alt="Capture screen">
   &nbsp;&nbsp;
-  <a href="https://github.com/alex90132/chipmood/raw/main/docs/demo.mp4">
-    <img src="docs/demo.gif" width="260" alt="Demo">
-  </a>
+  <img src="docs/player.webp" width="260" alt="Player">
 </p>
 
-<p align="center"><sub>screenshot · animated demo (click for the full video with sound)</sub></p>
+<p align="center"><sub>snap a photo — get a track · <a href="https://github.com/alex90132/chipmood/raw/main/docs/demo.mp4">video with sound</a></sub></p>
 
 ## What it does
 
